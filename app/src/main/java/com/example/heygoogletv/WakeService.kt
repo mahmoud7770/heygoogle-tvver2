@@ -131,16 +131,39 @@ class WakeService : Service(), RecognitionListener {
     }
 
     private fun onWake() {
-        if (triggered) return
-        triggered = true
-        Log.i(TAG, "wake phrase detected")
-        stopSpeech()
-        launchAssistant()
-        handler.postDelayed({
-            triggered = false
-            startListening()
-        }, RESUME_DELAY_MS)
-    }
+    if (triggered || !running) return
+
+    triggered = true
+    assistantSessionActive = true
+    assistantMicSeen = false
+
+    restartPending = false
+    handler.removeCallbacksAndMessages(RESTART_TOKEN)
+    handler.removeCallbacks(assistantMicMonitor)
+
+    Log.i(TAG, "Wake word detected - stopping Vosk")
+
+    // إيقاف Vosk وتحرير الميكروفون
+    stopSpeech()
+
+    showNotification("جاري تشغيل المساعد الصوتي...")
+
+    // نصف ثانية فقط قبل فتح Google Assistant
+    handler.postDelayed({
+        if (running && assistantSessionActive) {
+            val launched = launchAssistant()
+
+            if (launched) {
+                handler.postDelayed(
+                    assistantMicMonitor,
+                    ASSISTANT_MIC_POLL_MS
+                )
+            } else {
+                finishAssistantSession("assistant launch failed")
+            }
+        }
+    }, 500L)
+}
 
     private fun stopSpeech() {
         try {
@@ -186,6 +209,8 @@ class WakeService : Service(), RecognitionListener {
 
     companion object {
         private const val TAG = "HeyGoogleTV"
+        private const val RELEASE_MIC_BEFORE_ASSISTANT_MS = 500L
+        private const val ASSISTANT_MIC_POLL_MS = 500L
         private const val CHANNEL = "wake"
         private const val RESUME_DELAY_MS = 12_000L
         private const val MODEL_NAME = "vosk-model-small-en-us-0.15"
