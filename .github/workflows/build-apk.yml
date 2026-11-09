@@ -22,8 +22,10 @@ jobs:
           java-version: '17'
 
 
-      - name: Grant execute permission
-        run: chmod +x gradlew
+      - name: Grant Execute Permission
+        run: |
+       ls -la
+       chmod +x ./gradlew
 
       - name: Build APK
         run: ./gradlew assembleDebug
