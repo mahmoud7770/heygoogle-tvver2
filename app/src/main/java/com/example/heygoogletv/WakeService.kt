@@ -134,37 +134,28 @@ class WakeService : Service(), RecognitionListener {
     if (triggered || !running) return
 
     triggered = true
-    assistantSessionActive = true
     assistantMicSeen = false
-
     restartPending = false
+
     handler.removeCallbacksAndMessages(RESTART_TOKEN)
-    handler.removeCallbacks(assistantMicMonitor)
 
     Log.i(TAG, "Wake word detected - stopping Vosk")
 
-    // إيقاف Vosk وتحرير الميكروفون
     stopSpeech()
 
-    showNotification("جاري تشغيل المساعد الصوتي...")
+    showNotification("جاري تشغيل المساعد الصوتي")
 
-    // نصف ثانية فقط قبل فتح Google Assistant
     handler.postDelayed({
-        if (running && assistantSessionActive) {
-            val launched = launchAssistant()
+        if (!running || !triggered) return@postDelayed
 
-            if (launched) {
-                handler.postDelayed(
-                    assistantMicMonitor,
-                    ASSISTANT_MIC_POLL_MS
-                )
-            } else {
-                finishAssistantSession("assistant launch failed")
-            }
+        if (launchAssistant()) {
+            handler.postDelayed(assistantMicMonitor, 500L)
+        } else {
+            triggered = false
+            scheduleListeningRetry("Assistant launch failed", 1000L)
         }
     }, 500L)
 }
-
     private fun stopSpeech() {
         try {
             speech?.stop()
@@ -174,27 +165,28 @@ class WakeService : Service(), RecognitionListener {
         speech = null
     }
 
-    private fun launchAssistant() {
-        val candidates = listOf(
-            Intent(Intent.ACTION_ASSIST),
-            Intent(Intent.ACTION_ASSIST).setPackage("com.google.android.katniss"),
-            Intent(Intent.ACTION_VOICE_COMMAND),
-        )
-        for (i in candidates) {
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            try {
-                startActivity(i)
-                Log.i(TAG, "launched via ${i.action} pkg=${i.`package`}")
-                return
-            } catch (e: ActivityNotFoundException) {
-                Log.w(TAG, "no handler for ${i.action}")
-            } catch (e: SecurityException) {
-                Log.w(TAG, "blocked ${i.action}: ${e.message}")
-            }
+    private fun launchAssistant(): Boolean {
+    val candidates = listOf(
+        Intent(Intent.ACTION_ASSIST),
+        Intent(Intent.ACTION_ASSIST)
+            .setPackage("com.google.android.katniss"),
+        Intent(Intent.ACTION_VOICE_COMMAND)
+    )
+
+    for (intent in candidates) {
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        try {
+            startActivity(intent)
+            Log.i(TAG, "Assistant launched")
+            return true
+        } catch (e: Exception) {
+            Log.w(TAG, "Assistant launch failed", e)
         }
-        Log.e(TAG, "could not launch assistant")
     }
 
+    return false
+}
     override fun onDestroy() {
         running = false
         handler.removeCallbacksAndMessages(null)
